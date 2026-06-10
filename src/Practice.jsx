@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useRecorder, isSpeechSupported } from "./useRecorder.js";
 import { getTopic, analyze } from "./api.js";
 import Report from "./Report.jsx";
+import Bisma from "./Bisma.jsx";
 
 function fmt(s) {
   const m = Math.floor(s / 60);
@@ -73,6 +74,17 @@ export default function Practice() {
 
       {/* Topic card */}
       <div className="topic-card">
+        <div className="topic-bisma">
+          <Bisma
+            size={150}
+            speaking={rec.status === "recording"}
+            message={
+              rec.status === "recording" ? "I'm listening… you're doing great! 🎧" :
+              rec.status === "done" ? "Lovely! Want my analysis? ✨" :
+              topic ? "Take a breath… and begin!" : ""
+            }
+          />
+        </div>
         {topic ? (
           <>
             <span className="kicker">Your topic</span>
@@ -140,8 +152,9 @@ export default function Practice() {
       <div id="report-anchor" />
       {analyzing && !report && (
         <div className="analyzing">
+          <Bisma size={140} speaking message="Hmm… let me listen back carefully 🤔" />
           <div className="spinner" />
-          <p>Bisma is listening back to your speech…</p>
+          <p>Bisma is analysing your speech…</p>
         </div>
       )}
       {report && <Report data={report} metrics={metrics} topic={topic?.topic} />}

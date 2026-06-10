@@ -17,7 +17,7 @@ export default async function handler(req, res) {
           `Respond ONLY as JSON: {"topic":"<short title>","prompt":"<one encouraging sentence telling them what to do>"}.`,
       },
     ];
-    const text = await chat(messages, { json: true, temperature: 1.0, max_tokens: 300 });
+    const text = await chat(messages, { json: true, temperature: 1.0, max_tokens: 200, tier: "fast" });
     const data = extractJson(text) || {};
     if (!data.topic) return send(res, 502, { error: "Could not generate a topic." });
     return send(res, 200, { topic: data.topic, prompt: data.prompt || "Speak naturally for up to 5 minutes." });

@@ -63,7 +63,7 @@ export default async function handler(req, res) {
       },
     ];
 
-    const text = await chat(messages, { json: true, temperature: 0.5, max_tokens: 2200 });
+    const text = await chat(messages, { json: true, temperature: 0.5, max_tokens: 1600, tier: "smart" });
     const data = extractJson(text);
     if (!data || !data.speech) return send(res, 502, { error: "Could not parse analysis from AI." });
     return send(res, 200, data);

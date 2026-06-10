@@ -14,11 +14,12 @@ export default async function handler(req, res) {
         role: "user",
         content:
           `Give me 6 useful English vocabulary words for today (varied difficulty, the kind that make speech sound articulate). ` +
-          `Avoid extremely obscure words. Use this random seed for variety: ${seed}. ` +
+          `Avoid extremely obscure words. Keep "meaning" under 12 words and "example" under 16 words. ` +
+          `Use this random seed for variety: ${seed}. ` +
           `Respond ONLY as JSON: {"words":[{"word":"","partOfSpeech":"","meaning":"","example":"","synonyms":["",""]}]}.`,
       },
     ];
-    const text = await chat(messages, { json: true, temperature: 0.9, max_tokens: 1200 });
+    const text = await chat(messages, { json: true, temperature: 0.9, max_tokens: 1400, tier: "fast" });
     const data = extractJson(text);
     if (!data || !Array.isArray(data.words)) {
       return send(res, 502, { error: "Could not parse word list from AI." });

@@ -1,8 +1,27 @@
 // Shared helpers for the serverless API functions.
 // These run on Vercel (Node serverless) and in local Vite dev (via the dev plugin).
 
-const NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions";
-const MODEL = "meta/llama-3.3-70b-instruct";
+// Provider config. Groq is preferred for its very low latency; NVIDIA is a fallback.
+const PROVIDERS = {
+  groq: {
+    url: "https://api.groq.com/openai/v1/chat/completions",
+    key: () => process.env.GROQ_API_KEY,
+    fast: "llama-3.1-8b-instant",       // quick tasks: words, topic
+    smart: "llama-3.3-70b-versatile",   // analysis quality
+  },
+  nvidia: {
+    url: "https://integrate.api.nvidia.com/v1/chat/completions",
+    key: () => process.env.NVIDIA_API_KEY,
+    fast: "meta/llama-3.3-70b-instruct",
+    smart: "meta/llama-3.3-70b-instruct",
+  },
+};
+
+function pickProvider() {
+  if (process.env.GROQ_API_KEY) return PROVIDERS.groq;
+  if (process.env.NVIDIA_API_KEY) return PROVIDERS.nvidia;
+  throw new Error("No AI API key set (GROQ_API_KEY or NVIDIA_API_KEY).");
+}
 
 export async function readJson(req) {
   if (req.body && typeof req.body === "object") return req.body;
@@ -26,13 +45,14 @@ export function send(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-// Call NVIDIA's OpenAI-compatible chat endpoint and return the assistant text.
-export async function chat(messages, { json = false, temperature = 0.7, max_tokens = 2048 } = {}) {
-  const key = process.env.NVIDIA_API_KEY;
-  if (!key) throw new Error("NVIDIA_API_KEY is not set on the server.");
+// Call the provider's OpenAI-compatible chat endpoint and return the assistant text.
+// tier: "fast" (small low-latency model) or "smart" (larger model for analysis).
+export async function chat(messages, { json = false, temperature = 0.7, max_tokens = 2048, tier = "smart" } = {}) {
+  const p = pickProvider();
+  const key = p.key();
 
   const body = {
-    model: MODEL,
+    model: tier === "fast" ? p.fast : p.smart,
     messages,
     temperature,
     top_p: 0.95,
@@ -41,7 +61,7 @@ export async function chat(messages, { json = false, temperature = 0.7, max_toke
   };
   if (json) body.response_format = { type: "json_object" };
 
-  const r = await fetch(NVIDIA_URL, {
+  const r = await fetch(p.url, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${key}`,
@@ -53,7 +73,7 @@ export async function chat(messages, { json = false, temperature = 0.7, max_toke
 
   if (!r.ok) {
     const t = await r.text();
-    throw new Error(`NVIDIA API ${r.status}: ${t.slice(0, 500)}`);
+    throw new Error(`AI API ${r.status}: ${t.slice(0, 500)}`);
   }
   const out = await r.json();
   return out?.choices?.[0]?.message?.content ?? "";

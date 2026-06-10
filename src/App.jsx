@@ -99,7 +99,7 @@ export default function App() {
 
         <div className="hero-text">
           <span className="badge">✨ Your AI English Tutor</span>
-          <h1>Speak English with <span className="grad">confidence</span>,<br />guided by Bisma.</h1>
+          <h1>Speak English with <span className="grad">confidence</span>, <br />guided by Bisma.</h1>
           <p>
             Learn fresh vocabulary every day, then take a 5-minute impromptu talk.
             Bisma listens and coaches your storytelling, structure, pacing,

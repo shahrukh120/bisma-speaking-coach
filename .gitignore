@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.local
+.DS_Store
+.vercel
+*.log
+
+# large source art (kept locally, not needed for build)
+hand-drawn-anime-kawaii-illustration/*.eps
+hand-drawn-anime-kawaii-illustration/*.ai

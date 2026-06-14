@@ -25,7 +25,9 @@ export default async function handler(req, res) {
           "plus objective metrics captured from their recording. The transcript comes from speech-to-text so punctuation and " +
           "exact pauses are approximate — use the provided metrics for pacing/pauses/fillers, and infer storytelling, structure, " +
           "and likely voice modulation from word choice, sentence variety, and phrasing. Be specific, kind, and actionable. " +
-          "Score each dimension 0-100. Quote short phrases from the transcript as evidence where useful.",
+          "Score each dimension 0-100. Keep every \"feedback\" to ONE concise sentence (max ~22 words). " +
+          "Quote short phrases from the transcript as evidence where useful. " +
+          "If the recording is very short, still fill in every field with brief, encouraging guidance.",
       },
       {
         role: "user",
@@ -63,7 +65,7 @@ export default async function handler(req, res) {
       },
     ];
 
-    const text = await chat(messages, { json: true, temperature: 0.5, max_tokens: 1600, tier: "smart" });
+    const text = await chat(messages, { json: true, temperature: 0.4, max_tokens: 3000, tier: "smart" });
     const data = extractJson(text);
     if (!data || !data.speech) return send(res, 502, { error: "Could not parse analysis from AI." });
     return send(res, 200, data);

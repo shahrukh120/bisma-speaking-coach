@@ -73,6 +73,15 @@ export async function chat(messages, { json = false, temperature = 0.7, max_toke
 
   if (!r.ok) {
     const t = await r.text();
+    // Groq's strict JSON mode can 400 with code "json_validate_failed" when the
+    // model's output is truncated by max_tokens. It returns the partial text in
+    // error.failed_generation — salvage it so extractJson can repair/parse it.
+    if (json) {
+      try {
+        const partial = JSON.parse(t)?.error?.failed_generation;
+        if (partial) return partial;
+      } catch {}
+    }
     throw new Error(`AI API ${r.status}: ${t.slice(0, 500)}`);
   }
   const out = await r.json();
@@ -98,5 +107,54 @@ export function extractJson(text) {
       return JSON.parse(text.slice(first, last + 1));
     } catch {}
   }
+  // Last resort: repair a JSON object that was truncated mid-generation by
+  // closing any open string/array/object so the parseable prefix survives.
+  if (first !== -1) {
+    const repaired = repairJson(text.slice(first));
+    if (repaired) {
+      try {
+        return JSON.parse(repaired);
+      } catch {}
+    }
+  }
   return null;
+}
+
+// Close unterminated strings/arrays/objects in a truncated JSON string.
+function repairJson(s) {
+  let inStr = false, esc = false;
+  const stack = [];
+  let lastComplete = 0; // index after the last balanced char at depth>0
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') inStr = true;
+    else if (c === "{" || c === "[") stack.push(c === "{" ? "}" : "]");
+    else if (c === "}" || c === "]") stack.pop();
+    if (stack.length && (c === "}" || c === "]" || c === '"' || /[0-9eltursfan.]/i.test(c))) {
+      lastComplete = i + 1;
+    }
+  }
+  // Trim a dangling partial token (e.g. an incomplete key/value) back to the
+  // last comma or opening bracket so we don't keep half a property.
+  let body = s.slice(0, lastComplete);
+  body = body.replace(/,\s*("[^"]*)?$/s, "");
+  if (inStr) body += '"';
+  // Recompute what still needs closing after the trim.
+  const close = [];
+  let str = false, e = false;
+  for (const c of body) {
+    if (str) { if (e) e = false; else if (c === "\\") e = true; else if (c === '"') str = false; continue; }
+    if (c === '"') str = true;
+    else if (c === "{") close.push("}");
+    else if (c === "[") close.push("]");
+    else if (c === "}" || c === "]") close.pop();
+  }
+  if (str) body += '"';
+  return body + close.reverse().join("");
 }

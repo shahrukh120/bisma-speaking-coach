@@ -37,10 +37,17 @@ export default function Practice() {
   };
 
   const runAnalysis = async () => {
+    const m = rec.getMetrics();
+    if (m.wordCount < 5) {
+      setErr(
+        "Hmm, I couldn't catch enough words to analyse. Make sure your mic is on and speak a little longer — " +
+        "and note that live transcription works best in Google Chrome."
+      );
+      return;
+    }
     setAnalyzing(true);
     setErr("");
     try {
-      const m = rec.getMetrics();
       setMetrics(m);
       const data = await analyze({
         topic: topic?.topic || "Free talk",

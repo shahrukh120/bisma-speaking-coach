@@ -58,7 +58,12 @@ export default function Practice() {
       setReport(data);
       document.getElementById("report-anchor")?.scrollIntoView({ behavior: "smooth" });
     } catch (e) {
-      setErr(e.message);
+      const msg = String(e.message || e);
+      if (/\b(429|413)\b|rate limit|too large|tokens per/i.test(msg)) {
+        setErr("Bisma is a little overloaded right now (lots of learners at once). Please wait a few seconds and tap “Get my analysis” again — your recording is still here.");
+      } else {
+        setErr(msg);
+      }
     } finally {
       setAnalyzing(false);
     }

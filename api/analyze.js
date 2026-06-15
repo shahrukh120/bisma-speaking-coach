@@ -3,10 +3,13 @@ import { chat, readJson, send, extractJson } from "./_lib.js";
 // POST /api/analyze  { topic, transcript, durationSec, metrics }
 export default async function handler(req, res) {
   try {
-    const { topic = "", transcript = "", durationSec = 0, metrics = {} } = await readJson(req);
+    let { topic = "", transcript = "", durationSec = 0, metrics = {} } = await readJson(req);
     if (!transcript || transcript.trim().split(/\s+/).length < 5) {
       return send(res, 400, { error: "Transcript too short to analyse. Please speak a bit more." });
     }
+    // Cap transcript length to keep the request comfortably within token limits.
+    transcript = transcript.trim();
+    if (transcript.length > 6000) transcript = transcript.slice(0, 6000) + " …";
 
     const m = {
       wordCount: metrics.wordCount ?? 0,
@@ -65,7 +68,7 @@ export default async function handler(req, res) {
       },
     ];
 
-    const text = await chat(messages, { json: true, temperature: 0.4, max_tokens: 3000, tier: "smart" });
+    const text = await chat(messages, { json: true, temperature: 0.4, max_tokens: 1400, tier: "smart" });
     const data = extractJson(text);
     if (!data || !data.speech) return send(res, 502, { error: "Could not parse analysis from AI." });
     return send(res, 200, data);

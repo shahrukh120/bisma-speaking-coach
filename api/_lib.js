@@ -1,26 +1,32 @@
 // Shared helpers for the serverless API functions.
 // These run on Vercel (Node serverless) and in local Vite dev (via the dev plugin).
 
-// Provider config. Groq is preferred for its very low latency; NVIDIA is a fallback.
+// Provider config. Groq is preferred for its very low latency; NVIDIA is a
+// fallback used automatically when Groq is rate-limited (429/413).
 const PROVIDERS = {
   groq: {
     url: "https://api.groq.com/openai/v1/chat/completions",
     key: () => process.env.GROQ_API_KEY,
     fast: "llama-3.1-8b-instant",       // quick tasks: words, topic
     smart: "llama-3.3-70b-versatile",   // analysis quality
+    strictJson: true,                   // supports response_format json_object
   },
   nvidia: {
     url: "https://integrate.api.nvidia.com/v1/chat/completions",
     key: () => process.env.NVIDIA_API_KEY,
     fast: "meta/llama-3.3-70b-instruct",
     smart: "meta/llama-3.3-70b-instruct",
+    strictJson: false,                  // rely on extractJson instead
   },
 };
 
-function pickProvider() {
-  if (process.env.GROQ_API_KEY) return PROVIDERS.groq;
-  if (process.env.NVIDIA_API_KEY) return PROVIDERS.nvidia;
-  throw new Error("No AI API key set (GROQ_API_KEY or NVIDIA_API_KEY).");
+// Ordered list of providers to try (first available preferred).
+function providerChain() {
+  const chain = [];
+  if (process.env.GROQ_API_KEY) chain.push(PROVIDERS.groq);
+  if (process.env.NVIDIA_API_KEY) chain.push(PROVIDERS.nvidia);
+  if (!chain.length) throw new Error("No AI API key set (GROQ_API_KEY or NVIDIA_API_KEY).");
+  return chain;
 }
 
 export async function readJson(req) {
@@ -45,12 +51,13 @@ export function send(res, status, obj) {
   res.end(JSON.stringify(obj));
 }
 
-// Call the provider's OpenAI-compatible chat endpoint and return the assistant text.
-// tier: "fast" (small low-latency model) or "smart" (larger model for analysis).
-export async function chat(messages, { json = false, temperature = 0.7, max_tokens = 2048, tier = "smart" } = {}) {
-  const p = pickProvider();
-  const key = p.key();
+// Status codes worth falling back to another provider for.
+const FALLBACK_STATUSES = new Set([429, 413, 500, 502, 503, 529]);
 
+class RateLimited extends Error {}
+
+// Call one provider's OpenAI-compatible chat endpoint.
+async function callProvider(p, messages, { json, temperature, max_tokens, tier }) {
   const body = {
     model: tier === "fast" ? p.fast : p.smart,
     messages,
@@ -59,33 +66,55 @@ export async function chat(messages, { json = false, temperature = 0.7, max_toke
     max_tokens,
     stream: false,
   };
-  if (json) body.response_format = { type: "json_object" };
+  if (json && p.strictJson) body.response_format = { type: "json_object" };
 
   const r = await fetch(p.url, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${key}`,
+      Authorization: `Bearer ${p.key()}`,
       "Content-Type": "application/json",
       Accept: "application/json",
     },
     body: JSON.stringify(body),
   });
 
-  if (!r.ok) {
-    const t = await r.text();
-    // Groq's strict JSON mode can 400 with code "json_validate_failed" when the
-    // model's output is truncated by max_tokens. It returns the partial text in
-    // error.failed_generation — salvage it so extractJson can repair/parse it.
-    if (json) {
-      try {
-        const partial = JSON.parse(t)?.error?.failed_generation;
-        if (partial) return partial;
-      } catch {}
-    }
-    throw new Error(`AI API ${r.status}: ${t.slice(0, 500)}`);
+  if (r.ok) {
+    const out = await r.json();
+    return out?.choices?.[0]?.message?.content ?? "";
   }
-  const out = await r.json();
-  return out?.choices?.[0]?.message?.content ?? "";
+
+  const t = await r.text();
+  // Groq's strict JSON mode can 400 with "json_validate_failed" when output is
+  // truncated by max_tokens; it returns the partial in error.failed_generation —
+  // salvage it so extractJson can repair/parse it.
+  if (json) {
+    try {
+      const partial = JSON.parse(t)?.error?.failed_generation;
+      if (partial) return partial;
+    } catch {}
+  }
+  const err = new Error(`AI API ${r.status}: ${t.slice(0, 300)}`);
+  if (FALLBACK_STATUSES.has(r.status)) throw Object.assign(new RateLimited(err.message), { status: r.status });
+  throw err;
+}
+
+// Try providers in order, automatically falling over to the next one when the
+// current is rate-limited / overloaded (so a Groq TPM limit doesn't break the app).
+// tier: "fast" (small low-latency model) or "smart" (larger model for analysis).
+export async function chat(messages, { json = false, temperature = 0.7, max_tokens = 2048, tier = "smart" } = {}) {
+  const chain = providerChain();
+  const opts = { json, temperature, max_tokens, tier };
+  let lastErr;
+  for (const p of chain) {
+    try {
+      return await callProvider(p, messages, opts);
+    } catch (e) {
+      lastErr = e;
+      // Only fall through to the next provider on transient/limit errors.
+      if (!(e instanceof RateLimited)) throw e;
+    }
+  }
+  throw lastErr;
 }
 
 // Robustly pull a JSON object out of a model response (handles ```json fences).
